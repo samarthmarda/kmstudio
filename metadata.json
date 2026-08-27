@@ -1,0 +1,6 @@
+{
+  "name": "Business OS - KM Studio ERP",
+  "description": "Comprehensive all-in-one ERP & CRM system for business operations, accounting, inventory, light manufacturing, clients, body measurements, and mobile quick-capture workflow.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
