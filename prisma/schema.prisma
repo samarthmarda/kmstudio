@@ -368,3 +368,445 @@ model ActivityLog {
   @@index([category])
   @@map("activity_logs")
 }
+
+// ---------------------------------------------------------------------------
+// Universal BOSS core. All new entities use UUID primary keys and are scoped
+// to a company (the tenant boundary). The tailoring models above are kept as
+// a separate business vertical.
+// ---------------------------------------------------------------------------
+
+enum OrganisationStatus {
+  ACTIVE
+  SUSPENDED
+  ARCHIVED
+}
+
+enum OrganisationRole {
+  OWNER
+  ADMIN
+  MEMBER
+  VIEWER
+}
+
+enum MemberStatus {
+  ACTIVE
+  INVITED
+  SUSPENDED
+}
+
+enum PartyRole {
+  CUSTOMER
+  SUPPLIER
+  EMPLOYEE
+  LENDER
+  PARTNER
+  GOVERNMENT
+  SERVICE_PROVIDER
+}
+
+enum AccountCategory {
+  ASSET
+  LIABILITY
+  EQUITY
+  INCOME
+  EXPENSE
+}
+
+enum LedgerAccountType {
+  CURRENT_ASSET
+  FIXED_ASSET
+  BANK
+  CASH
+  ACCOUNTS_RECEIVABLE
+  CURRENT_LIABILITY
+  ACCOUNTS_PAYABLE
+  EQUITY
+  DIRECT_INCOME
+  INDIRECT_INCOME
+  DIRECT_EXPENSE
+  INDIRECT_EXPENSE
+  TAX_PAYABLE
+}
+
+enum BalanceType {
+  DEBIT
+  CREDIT
+}
+
+enum JournalEntryStatus {
+  DRAFT
+  POSTED
+  VOID
+}
+
+enum ProductType {
+  GOODS
+  SERVICE
+}
+
+enum UnitOfMeasure {
+  PIECE
+  METER
+  YARD
+  KILOGRAM
+  GRAM
+  LITER
+  SET
+  ROLL
+  BOX
+  HOUR
+}
+
+enum StockMovementType {
+  OPENING
+  PURCHASE_IN
+  SALES_OUT
+  PRODUCTION_IN
+  PRODUCTION_OUT
+  ADJUSTMENT
+  RETURN_IN
+  RETURN_OUT
+  TRANSFER_IN
+  TRANSFER_OUT
+}
+
+model Organisation {
+  id        String               @id @default(uuid()) @db.Uuid
+  name      String
+  slug      String               @unique
+  legalName String?
+  email     String?
+  phone     String?
+  logoUrl   String?
+  status    OrganisationStatus   @default(ACTIVE)
+  createdAt DateTime             @default(now())
+  updatedAt DateTime             @updatedAt
+  members   OrganisationMember[]
+  companies Company[]
+
+  @@map("organisations")
+}
+
+model User {
+  id             String               @id @default(uuid()) @db.Uuid
+  email          String               @unique
+  name           String
+  passwordHash   String?
+  phone          String?
+  avatarUrl      String?
+  isActive       Boolean              @default(true)
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @updatedAt
+  memberships    OrganisationMember[]
+  journalEntries JournalEntry[]       @relation("JournalEntryCreatedBy")
+  stockMovements StockMovement[]      @relation("StockMovementCreatedBy")
+
+  @@map("users")
+}
+
+model OrganisationMember {
+  id             String           @id @default(uuid()) @db.Uuid
+  organisationId String           @db.Uuid
+  userId         String           @db.Uuid
+  role           OrganisationRole @default(MEMBER)
+  status         MemberStatus     @default(ACTIVE)
+  joinedAt       DateTime?
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+  organisation   Organisation     @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  user           User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([organisationId, userId])
+  @@index([userId])
+  @@index([organisationId, role])
+  @@map("organisation_members")
+}
+
+model Company {
+  id                      String                   @id @default(uuid()) @db.Uuid
+  organisationId          String                   @db.Uuid
+  name                    String
+  slug                    String
+  legalName               String?
+  gstin                   String?
+  pan                     String?
+  currency                String                   @default("INR")
+  timezone                String                   @default("Asia/Kolkata")
+  addressLine1            String?
+  addressLine2            String?
+  city                    String?
+  state                   String?
+  postalCode              String?
+  country                 String                   @default("India")
+  isActive                Boolean                  @default(true)
+  createdAt               DateTime                 @default(now())
+  updatedAt               DateTime                 @updatedAt
+  organisation            Organisation             @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  branches                Branch[]
+  financialYears          FinancialYear[]
+  accountingConfiguration AccountingConfiguration?
+  parties                 Party[]
+  ledgerAccounts          LedgerAccount[]
+  journalEntries          JournalEntry[]
+  products                Product[]
+  stockMovements          StockMovement[]
+  stockBalances           StockBalance[]
+
+  @@unique([organisationId, slug])
+  @@index([organisationId])
+  @@map("companies")
+}
+
+model Branch {
+  id             String          @id @default(uuid()) @db.Uuid
+  companyId      String          @db.Uuid
+  name           String
+  code           String
+  addressLine1   String?
+  addressLine2   String?
+  city           String?
+  state          String?
+  postalCode     String?
+  country        String          @default("India")
+  isPrimary      Boolean         @default(false)
+  isActive       Boolean         @default(true)
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  company        Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  journalEntries JournalEntry[]
+  stockMovements StockMovement[]
+  stockBalances  StockBalance[]
+
+  @@unique([companyId, code])
+  @@index([companyId])
+  @@map("branches")
+}
+
+model Party {
+  id                 String                @id @default(uuid()) @db.Uuid
+  companyId          String                @db.Uuid
+  code               String
+  name               String
+  legalName          String?
+  email              String?
+  phone              String?
+  gstin              String?
+  pan                String?
+  addressLine1       String?
+  addressLine2       String?
+  city               String?
+  state              String?
+  postalCode         String?
+  country            String                @default("India")
+  creditLimit        Decimal               @default(0) @db.Decimal(18, 2)
+  creditDays         Int                   @default(0)
+  openingBalance     Decimal               @default(0) @db.Decimal(18, 2)
+  openingBalanceType BalanceType           @default(DEBIT)
+  notes              String?
+  isActive           Boolean               @default(true)
+  createdAt          DateTime              @default(now())
+  updatedAt          DateTime              @updatedAt
+  company            Company               @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  roleAssignments    PartyRoleAssignment[]
+  ledgerAccounts     LedgerAccount[]
+
+  @@unique([id, companyId])
+  @@unique([companyId, code])
+  @@index([companyId, name])
+  @@map("parties")
+}
+
+model PartyRoleAssignment {
+  id         String    @id @default(uuid()) @db.Uuid
+  companyId  String    @db.Uuid
+  partyId    String    @db.Uuid
+  role       PartyRole
+  isPrimary  Boolean   @default(false)
+  assignedAt DateTime  @default(now())
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  party      Party     @relation(fields: [partyId, companyId], references: [id, companyId], onDelete: Cascade)
+
+  @@unique([partyId, role])
+  @@index([companyId, role])
+  @@map("party_role_assignments")
+}
+
+model FinancialYear {
+  id             String         @id @default(uuid()) @db.Uuid
+  companyId      String         @db.Uuid
+  name           String
+  startDate      DateTime       @db.Date
+  endDate        DateTime       @db.Date
+  isActive       Boolean        @default(false)
+  isClosed       Boolean        @default(false)
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  company        Company        @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  journalEntries JournalEntry[]
+
+  @@unique([companyId, name])
+  @@index([companyId, isActive])
+  @@map("financial_years")
+}
+
+model AccountingConfiguration {
+  id                   String   @id @default(uuid()) @db.Uuid
+  companyId            String   @unique @db.Uuid
+  baseCurrency         String   @default("INR")
+  fiscalYearStartMonth Int      @default(4)
+  fiscalYearStartDay   Int      @default(1)
+  dateFormat           String   @default("DD/MM/YYYY")
+  timezone             String   @default("Asia/Kolkata")
+  roundingPrecision    Int      @default(2)
+  isLocked             Boolean  @default(false)
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+  company              Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@map("accounting_configurations")
+}
+
+model LedgerAccount {
+  id                 String            @id @default(uuid()) @db.Uuid
+  companyId          String            @db.Uuid
+  code               String
+  name               String
+  category           AccountCategory
+  type               LedgerAccountType
+  parentId           String?           @db.Uuid
+  partyId            String?           @db.Uuid
+  isSystem           Boolean           @default(false)
+  isActive           Boolean           @default(true)
+  openingBalance     Decimal           @default(0) @db.Decimal(18, 2)
+  openingBalanceType BalanceType       @default(DEBIT)
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
+  company            Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  parent             LedgerAccount?    @relation("LedgerHierarchy", fields: [parentId], references: [id], onDelete: SetNull)
+  children           LedgerAccount[]   @relation("LedgerHierarchy")
+  party              Party?            @relation(fields: [partyId], references: [id], onDelete: SetNull)
+  journalLines       JournalLine[]
+
+  @@unique([companyId, code])
+  @@index([companyId, category])
+  @@index([parentId])
+  @@index([partyId])
+  @@map("ledger_accounts")
+}
+
+model JournalEntry {
+  id              String             @id @default(uuid()) @db.Uuid
+  companyId       String             @db.Uuid
+  financialYearId String             @db.Uuid
+  branchId        String?            @db.Uuid
+  entryNumber     String
+  entryDate       DateTime           @db.Date
+  narration       String             @default("")
+  referenceType   String?
+  referenceId     String?
+  status          JournalEntryStatus @default(DRAFT)
+  postedAt        DateTime?
+  createdById     String?            @db.Uuid
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+  company         Company            @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  financialYear   FinancialYear      @relation(fields: [financialYearId], references: [id], onDelete: Restrict)
+  branch          Branch?            @relation(fields: [branchId], references: [id], onDelete: SetNull)
+  createdBy       User?              @relation("JournalEntryCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  lines           JournalLine[]
+
+  @@unique([companyId, entryNumber])
+  @@index([companyId, entryDate])
+  @@index([financialYearId])
+  @@index([branchId])
+  @@map("journal_entries")
+}
+
+model JournalLine {
+  id              String        @id @default(uuid()) @db.Uuid
+  companyId       String        @db.Uuid
+  journalEntryId  String        @db.Uuid
+  ledgerAccountId String        @db.Uuid
+  lineNumber      Int
+  description     String?
+  debit           Decimal       @default(0) @db.Decimal(18, 2)
+  credit          Decimal       @default(0) @db.Decimal(18, 2)
+  createdAt       DateTime      @default(now())
+  journalEntry    JournalEntry  @relation(fields: [journalEntryId], references: [id], onDelete: Cascade)
+  ledgerAccount   LedgerAccount @relation(fields: [ledgerAccountId], references: [id], onDelete: Restrict)
+
+  @@unique([journalEntryId, lineNumber])
+  @@index([companyId])
+  @@index([ledgerAccountId])
+  @@map("journal_lines")
+}
+
+model Product {
+  id             String          @id @default(uuid()) @db.Uuid
+  companyId      String          @db.Uuid
+  sku            String
+  name           String
+  description    String?
+  type           ProductType     @default(GOODS)
+  unit           UnitOfMeasure   @default(PIECE)
+  hsnCode        String?
+  gstRate        Decimal         @default(0) @db.Decimal(5, 2)
+  purchasePrice  Decimal         @default(0) @db.Decimal(18, 2)
+  sellingPrice   Decimal         @default(0) @db.Decimal(18, 2)
+  trackInventory Boolean         @default(true)
+  isActive       Boolean         @default(true)
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  company        Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  stockMovements StockMovement[]
+  stockBalances  StockBalance[]
+
+  @@unique([companyId, sku])
+  @@index([companyId, name])
+  @@map("products")
+}
+
+model StockMovement {
+  id            String            @id @default(uuid()) @db.Uuid
+  companyId     String            @db.Uuid
+  productId     String            @db.Uuid
+  branchId      String?           @db.Uuid
+  type          StockMovementType
+  quantity      Decimal           @db.Decimal(18, 3)
+  unitCost      Decimal?          @db.Decimal(18, 4)
+  referenceType String?
+  referenceId   String?
+  reason        String?
+  occurredAt    DateTime          @default(now())
+  createdById   String?           @db.Uuid
+  createdAt     DateTime          @default(now())
+  company       Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  product       Product           @relation(fields: [productId], references: [id], onDelete: Restrict)
+  branch        Branch?           @relation(fields: [branchId], references: [id], onDelete: SetNull)
+  createdBy     User?             @relation("StockMovementCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([companyId, productId])
+  @@index([companyId, occurredAt])
+  @@index([branchId])
+  @@map("stock_movements")
+}
+
+model StockBalance {
+  id               String   @id @default(uuid()) @db.Uuid
+  companyId        String   @db.Uuid
+  productId        String   @db.Uuid
+  branchId         String   @db.Uuid
+  quantity         Decimal  @default(0) @db.Decimal(18, 3)
+  reservedQuantity Decimal  @default(0) @db.Decimal(18, 3)
+  averageCost      Decimal  @default(0) @db.Decimal(18, 4)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  company          Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  product          Product  @relation(fields: [productId], references: [id], onDelete: Restrict)
+  branch           Branch   @relation(fields: [branchId], references: [id], onDelete: Restrict)
+
+  @@unique([companyId, productId, branchId])
+  @@index([companyId, branchId])
+  @@map("stock_balances")
+}

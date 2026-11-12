@@ -81,10 +81,33 @@ Returns `503` with `status: "degraded"` if PostgreSQL cannot be reached.
 
 ## Database
 
-The initial schema lives in `prisma/schema.prisma` and covers clients,
-measurements, photos, suppliers, inventory, sales orders, invoices, purchase
-orders and activity logs. The first migration is in
-`prisma/migrations/`.
+The schema lives in `prisma/schema.prisma` and is split into two layers.
+
+### Universal BOSS core
+
+All core models use UUID primary keys and are isolated by `Company`. A company
+belongs to an `Organisation`, and users join organisations through
+`OrganisationMember`.
+
+- Tenancy: `Organisation`, `User`, `OrganisationMember`, `Company`, `Branch`
+- Parties: `Party`, `PartyRoleAssignment`
+- Accounting: `FinancialYear`, `AccountingConfiguration`, `LedgerAccount`,
+  `JournalEntry`, `JournalLine`
+- Products and inventory: `Product`, `StockMovement`, `StockBalance`
+
+`PartyRoleAssignment` uses a composite `(partyId, companyId)` foreign key, so a
+role can never reference a party from another company. Tenant-scoped natural
+keys such as `(companyId, code)`, `(companyId, sku)` and
+`(companyId, entryNumber)` are enforced by unique indexes.
+
+### Tailoring vertical
+
+The existing tailoring models (`Client`, `MeasurementSession`, `ClientPhoto`,
+`Supplier`, `InventoryItem`, `SalesOrder`, `Invoice`, `PurchaseOrder`,
+`ActivityLog`, and their line items) are preserved unchanged as a separate
+business vertical.
+
+### Migrations
 
 | Command | Description |
 | --- | --- |
@@ -93,14 +116,27 @@ orders and activity logs. The first migration is in
 | `npm run db:generate` | Regenerate the Prisma client |
 | `npm run db:studio` | Open Prisma Studio |
 
+Apply migrations to a clean database with:
+
+```bash
+npm run db:migrate:deploy
+```
+
 ## Tests
 
 ```bash
 npm test
 ```
 
-The suite verifies environment validation, the health endpoint and real
-PostgreSQL connectivity, including that a migration has been applied.
+The suite verifies:
+
+- environment validation
+- the health endpoint and real PostgreSQL connectivity
+- company isolation and cross-tenant foreign-key rejection
+- tenant-scoped unique constraints
+- accounting and inventory relationships
+- applying every migration to an empty PostgreSQL schema
+- production build compatibility of the existing frontend
 
 ## Baseline
 
