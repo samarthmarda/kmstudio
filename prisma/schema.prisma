@@ -1,0 +1,370 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum BodyType {
+  female
+  male
+  child
+}
+
+enum PipelineStage {
+  INQUIRY
+  MEASURED
+  ORDERED
+  IN_PRODUCTION
+  FITTING
+  READY
+  DELIVERED
+}
+
+enum MeasurementUnit {
+  cm
+  inches
+}
+
+enum PhotoTag {
+  front
+  back
+  side
+  fabric
+  detail
+  general
+}
+
+enum OrderStatus {
+  DRAFT
+  CONFIRMED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+enum InvoiceStatus {
+  DRAFT
+  UNPAID
+  PARTIALLY_PAID
+  PAID
+  OVERDUE
+  CANCELLED
+}
+
+enum PurchaseStatus {
+  DRAFT
+  ORDERED
+  RECEIVED
+  PAID
+  CANCELLED
+}
+
+enum SupplierCategory {
+  FABRIC
+  TRIMS
+  PACKAGING
+  MACHINERY
+  SERVICES
+}
+
+enum InventoryCategory {
+  RAW_MATERIAL
+  FABRIC
+  TRIMS
+  FINISHED_GOODS
+  SERVICE
+}
+
+enum InventoryUnit {
+  meters
+  yards
+  pieces
+  rolls
+  kg
+  sets
+}
+
+enum PaymentMethod {
+  CASH
+  BANK_TRANSFER
+  UPI
+  CARD
+  CHEQUE
+}
+
+enum ActivityCategory {
+  client
+  measurement
+  order
+  finance
+  inventory
+  production
+}
+
+model Client {
+  id                  String               @id @default(cuid())
+  name                String
+  phone               String
+  email               String
+  bodyType            BodyType
+  pipelineStage       PipelineStage        @default(INQUIRY)
+  age                 Int?
+  address             String?
+  gstin               String?
+  notes               String               @default("")
+  customValues        Json?
+  tags                String[]             @default([])
+  totalSpend          Decimal              @default(0) @db.Decimal(12, 2)
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+  measurementSessions MeasurementSession[]
+  photos              ClientPhoto[]
+  salesOrders         SalesOrder[]
+  invoices            Invoice[]
+  activityLogs        ActivityLog[]
+
+  @@index([name])
+  @@index([pipelineStage])
+  @@map("clients")
+}
+
+model MeasurementSession {
+  id           String          @id @default(cuid())
+  clientId     String
+  client       Client          @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  version      Int             @default(1)
+  bodyType     BodyType
+  unit         MeasurementUnit @default(cm)
+  measurements Json
+  notes        String?
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+  salesOrders  SalesOrder[]
+
+  @@unique([clientId, version])
+  @@index([clientId])
+  @@map("measurement_sessions")
+}
+
+model ClientPhoto {
+  id        String   @id @default(cuid())
+  clientId  String
+  client    Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  url       String
+  title     String
+  tag       PhotoTag @default(general)
+  createdAt DateTime @default(now())
+
+  @@index([clientId])
+  @@map("client_photos")
+}
+
+model Supplier {
+  id             String           @id @default(cuid())
+  name           String
+  contactPerson  String           @default("")
+  phone          String           @default("")
+  email          String           @default("")
+  gstin          String           @default("")
+  address        String           @default("")
+  category       SupplierCategory @default(FABRIC)
+  balanceDue     Decimal          @default(0) @db.Decimal(12, 2)
+  rating         Float            @default(0)
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+  purchaseOrders PurchaseOrder[]
+
+  @@index([name])
+  @@map("suppliers")
+}
+
+model InventoryItem {
+  id            String            @id @default(cuid())
+  sku           String            @unique
+  name          String
+  category      InventoryCategory
+  unit          InventoryUnit
+  currentStock  Decimal           @default(0) @db.Decimal(12, 3)
+  minStockLevel Decimal           @default(0) @db.Decimal(12, 3)
+  purchasePrice Decimal           @default(0) @db.Decimal(12, 2)
+  sellingPrice  Decimal           @default(0) @db.Decimal(12, 2)
+  hsnCode       String            @default("")
+  gstRate       Decimal           @default(0) @db.Decimal(5, 2)
+  location      String            @default("")
+  imageUrl      String?
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+  purchaseItems PurchaseItem[]
+  orderItems    SalesOrderItem[]
+  invoiceItems  InvoiceItem[]
+
+  @@index([category])
+  @@index([name])
+  @@map("inventory_items")
+}
+
+model SalesOrder {
+  id             String              @id @default(cuid())
+  orderNumber    String              @unique
+  clientId       String
+  client         Client              @relation(fields: [clientId], references: [id], onDelete: Restrict)
+  sessionId      String?
+  session        MeasurementSession? @relation(fields: [sessionId], references: [id], onDelete: SetNull)
+  items          SalesOrderItem[]
+  subtotal       Decimal             @default(0) @db.Decimal(12, 2)
+  taxTotal       Decimal             @default(0) @db.Decimal(12, 2)
+  grandTotal     Decimal             @default(0) @db.Decimal(12, 2)
+  status         OrderStatus         @default(DRAFT)
+  orderDate      DateTime            @default(now())
+  dueDate        DateTime
+  deliveryDate   DateTime?
+  notes          String?
+  assignedTailor String?
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
+  invoices       Invoice[]
+
+  @@index([clientId])
+  @@index([status])
+  @@map("sales_orders")
+}
+
+model SalesOrderItem {
+  id          String         @id @default(cuid())
+  orderId     String
+  order       SalesOrder     @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  itemId      String?
+  item        InventoryItem? @relation(fields: [itemId], references: [id], onDelete: SetNull)
+  name        String
+  description String?
+  quantity    Int            @default(1)
+  unitPrice   Decimal        @default(0) @db.Decimal(12, 2)
+  gstRate     Decimal        @default(0) @db.Decimal(5, 2)
+  lineTotal   Decimal        @default(0) @db.Decimal(12, 2)
+
+  @@index([orderId])
+  @@index([itemId])
+  @@map("sales_order_items")
+}
+
+model Invoice {
+  id            String           @id @default(cuid())
+  invoiceNumber String           @unique
+  orderId       String?
+  order         SalesOrder?      @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  clientId      String
+  client        Client           @relation(fields: [clientId], references: [id], onDelete: Restrict)
+  clientGstin   String?
+  items         InvoiceItem[]
+  subtotal      Decimal          @default(0) @db.Decimal(12, 2)
+  taxTotal      Decimal          @default(0) @db.Decimal(12, 2)
+  grandTotal    Decimal          @default(0) @db.Decimal(12, 2)
+  paidAmount    Decimal          @default(0) @db.Decimal(12, 2)
+  status        InvoiceStatus    @default(DRAFT)
+  issueDate     DateTime         @default(now())
+  dueDate       DateTime
+  payments      InvoicePayment[]
+  notes         String?
+  irn           String?
+  qrCodeMock    String?
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+
+  @@index([clientId])
+  @@index([orderId])
+  @@index([status])
+  @@map("invoices")
+}
+
+model InvoiceItem {
+  id          String         @id @default(cuid())
+  invoiceId   String
+  invoice     Invoice        @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  itemId      String?
+  item        InventoryItem? @relation(fields: [itemId], references: [id], onDelete: SetNull)
+  name        String
+  description String?
+  quantity    Int            @default(1)
+  unitPrice   Decimal        @default(0) @db.Decimal(12, 2)
+  gstRate     Decimal        @default(0) @db.Decimal(5, 2)
+  lineTotal   Decimal        @default(0) @db.Decimal(12, 2)
+
+  @@index([invoiceId])
+  @@index([itemId])
+  @@map("invoice_items")
+}
+
+model InvoicePayment {
+  id              String        @id @default(cuid())
+  invoiceId       String
+  invoice         Invoice       @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  amount          Decimal       @db.Decimal(12, 2)
+  paymentMethod   PaymentMethod
+  referenceNumber String?
+  paidAt          DateTime      @default(now())
+  notes           String?
+  createdAt       DateTime      @default(now())
+
+  @@index([invoiceId])
+  @@map("invoice_payments")
+}
+
+model PurchaseOrder {
+  id             String         @id @default(cuid())
+  purchaseNumber String         @unique
+  supplierId     String
+  supplier       Supplier       @relation(fields: [supplierId], references: [id], onDelete: Restrict)
+  items          PurchaseItem[]
+  subtotal       Decimal        @default(0) @db.Decimal(12, 2)
+  taxTotal       Decimal        @default(0) @db.Decimal(12, 2)
+  grandTotal     Decimal        @default(0) @db.Decimal(12, 2)
+  status         PurchaseStatus @default(DRAFT)
+  orderDate      DateTime       @default(now())
+  expectedDate   DateTime
+  receivedDate   DateTime?
+  paidAmount     Decimal        @default(0) @db.Decimal(12, 2)
+  notes          String?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  @@index([supplierId])
+  @@index([status])
+  @@map("purchase_orders")
+}
+
+model PurchaseItem {
+  id              String         @id @default(cuid())
+  purchaseOrderId String
+  purchaseOrder   PurchaseOrder  @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+  itemId          String?
+  item            InventoryItem? @relation(fields: [itemId], references: [id], onDelete: SetNull)
+  itemName        String
+  quantity        Decimal        @default(0) @db.Decimal(12, 3)
+  unit            InventoryUnit  @default(pieces)
+  unitPrice       Decimal        @default(0) @db.Decimal(12, 2)
+  gstRate         Decimal        @default(0) @db.Decimal(5, 2)
+  lineTotal       Decimal        @default(0) @db.Decimal(12, 2)
+
+  @@index([purchaseOrderId])
+  @@index([itemId])
+  @@map("purchase_items")
+}
+
+model ActivityLog {
+  id          String           @id @default(cuid())
+  clientId    String?
+  client      Client?          @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  action      String
+  title       String
+  description String           @default("")
+  user        String
+  category    ActivityCategory @default(client)
+  timestamp   DateTime         @default(now())
+
+  @@index([clientId])
+  @@index([category])
+  @@map("activity_logs")
+}
